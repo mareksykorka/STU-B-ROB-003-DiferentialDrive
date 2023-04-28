@@ -2,5 +2,7 @@
 # This .gitignore file was automatically created by Microsoft(R) Visual Studio.
 ################################################################################
 
-/DifDrive/x64/Debug
 /DifDrive/.vs/DifDrive
+/DifDrive/x64/Debug
+/DifDrive/x64/Release
+/DifDrive/ExternalLibraries
