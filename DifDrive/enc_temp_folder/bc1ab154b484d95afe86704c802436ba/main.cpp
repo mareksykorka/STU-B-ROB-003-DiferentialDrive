@@ -11,6 +11,7 @@
 #define DEFAULT_WHEELDIST 0.1f						//0.10[m] -> 1.0[dm] -> 10[cm] -> 100[mm]
 #define DEFAULT_WHEELBASE (DEFAULT_WHEELDIST * 2)	//0.20[m] -> 2.0[dm] -> 20[cm] -> 200[mm]
 #define DEFAULT_TRAIL_LEN 100
+#define DEFAULT_WTRAIL_LEN 100
 #define DEFAULT_SCALE 100.f							//[cm]
 #define GRID_SPACING 10.f							//[dm] (najmensi dielik)
 
@@ -210,7 +211,7 @@ public:
 	}
 
 	void checkRecalculate(sf::Vector2f vehiclePos, sf::Vector2u windowSize) {
-		if ((abs(lastPos.x - vehiclePos.x) * DEFAULT_SCALE > (windowSize.x / 2 / config.getZoomLevel())) || (abs(lastPos.y - vehiclePos.y) * DEFAULT_SCALE > (windowSize.y / 2 / config.getZoomLevel())))
+		if ((abs(lastPos.x - vehiclePos.x)* DEFAULT_SCALE > (windowSize.x / 2)) || (abs(lastPos.y - vehiclePos.y) * DEFAULT_SCALE > (windowSize.y / 2)))
 			recalculate(vehiclePos, windowSize);
 	}
 
