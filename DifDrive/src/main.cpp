@@ -10,11 +10,16 @@
 #define DEFAULT_WHEEL_RADIUS 0.05f					//0.05[m] -> 0.5[dm] -> 5 [cm] -> 50 [mm]
 #define DEFAULT_WHEELDIST 0.1f						//0.10[m] -> 1.0[dm] -> 10[cm] -> 100[mm]
 #define DEFAULT_WHEELBASE (DEFAULT_WHEELDIST * 2)	//0.20[m] -> 2.0[dm] -> 20[cm] -> 200[mm]
+#define DEFAULT_TRAIL_LEN 10000
+#define DEFAULT_WTRAIL_LEN 100
 #define DEFAULT_SCALE 100.f							//[cm]
 #define GRID_SPACING 10.f							//[dm] (najmensi dielik)
 
 #define TIME_mS 0.001f
-#define TIME_uS (TIME_mS*TIME_mS)
+#define TIME_uS (TIME_mS * TIME_mS)
+
+/*#define SIMULATION_FIXED_STEP 0.005f
+#define SIMULATION_SECOND_STEP_AMOUNT 200.f*/
 
 #define SIMULATION_FIXED_STEP 0.005f
 #define SIMULATION_SECOND_STEP_AMOUNT 200.f
@@ -62,6 +67,13 @@ public:
 	}
 	void setTimerResetStatus(bool status) {
 		this->resetTimer = status;
+	}
+
+	bool getDataStatus() {
+		return this->loadData;
+	}
+	void setDataStatus(bool status) {
+		this->loadData = status;
 	}
 
 	sf::Font getAppFont() {
@@ -118,7 +130,7 @@ public:
 	SimulationMode getSimMode() {
 		return this->simMode;
 	}
-	void setVectoreSimulation() {
+	void setVectorSimulation() {
 		this->simMode = SimulationMode::VECTOR;
 	}
 	void setRectangleSimulation() {
@@ -145,6 +157,8 @@ private:
 	bool appConfigChanged;
 	bool resetVehiclePos;
 	bool resetTimer;
+
+	bool loadData;
 
 	sf::Font font;
 
@@ -279,7 +293,7 @@ public:
 		for (long i = -((shiftedMaximumY)-shiftedCenterY); i <= ((shiftedMaximumY)+shiftedCenterY); i += GRID_SPACING)
 		{
 			if (i % 100 == 0) {
-				yLabel.setString(std::to_string((int)(i / DEFAULT_SCALE)));
+				yLabel.setString(std::to_string((int)(-i / DEFAULT_SCALE)));
 				yLabel.setPosition(sf::Vector2f((-shiftedMaximumX / 2) + (vehiclePos.x * DEFAULT_SCALE) + 25, i));
 				yLabels.push_back(yLabel);
 			}
@@ -405,8 +419,8 @@ public:
 		this->indicatorText = config.getColPrimary();
 		this->indicatorHighlight = config.getColIndicatorHigh();
 
-		background.setSize(size);
-		background.setPosition(position);
+		background.setSize(sf::Vector2f(size.x - 2 * BUTTON_PADDING, size.y - 2 * BUTTON_PADDING));
+		background.setPosition(sf::Vector2f(position.x + BUTTON_PADDING, position.y + BUTTON_PADDING));
 		background.setOutlineThickness(2);
 
 		label.setFont(font);
@@ -593,8 +607,8 @@ public:
 		vR = 0;
 
 		phiOffset = phi;
-		x = r * cos(phiOffset);
-		y = r * sin(phiOffset);
+		x = DEFAULT_WHEELBASE * 0.5f * cos(phiOffset);
+		y = DEFAULT_WHEELBASE * 0.5f * sin(phiOffset);
 
 		oldX = std::deque<double>();
 		oldY = std::deque<double>();
@@ -621,7 +635,7 @@ public:
 	void recalcWheelPos(double xCenter, double yCenter, double phi) {
 		oldX.push_front(x);
 		oldY.push_front(y);
-		if (oldX.size() > 100) {
+		if (oldX.size() > DEFAULT_TRAIL_LEN) {
 			oldX.pop_back();
 			oldY.pop_back();
 		}
@@ -633,19 +647,26 @@ public:
 	void draw(sf::RenderWindow& window, sf::Color color) {
 		sf::CircleShape point = sf::CircleShape(1.f);
 		point.setOrigin(sf::Vector2f(point.getRadius(), point.getRadius()));
-		point.setPosition(x * DEFAULT_SCALE, y * DEFAULT_SCALE);
+		point.setPosition(x * DEFAULT_SCALE, -y * DEFAULT_SCALE);
 		point.setFillColor(color);
 		window.draw(point);
+	}
 
-		point.setRadius(0.5f);
+	void drawTrail(sf::RenderWindow& window, sf::Color color) {
+		sf::CircleShape point = sf::CircleShape(1.f);
 		point.setOrigin(sf::Vector2f(point.getRadius(), point.getRadius()));
-		color.a = 255 * 0.15f;
 		for (int i = 0; i < oldX.size(); i++) {
-			point.setPosition(oldX[i] * DEFAULT_SCALE, oldY[i] * DEFAULT_SCALE);
+			point.setPosition(oldX[i] * DEFAULT_SCALE, -oldY[i] * DEFAULT_SCALE);
 			point.setFillColor(color);
 			window.draw(point);
 		}
 	}
+
+	void deleteTrail() {
+		oldX.clear();
+		oldY.clear();
+	}
+
 private:
 	double r;
 	double omegaR;
@@ -734,28 +755,10 @@ public:
 	void recalculate(double deltaTime) {
 		oldX.push_front(x);
 		oldY.push_front(y);
-		if (oldX.size() > 100) {
+		if (oldX.size() > DEFAULT_TRAIL_LEN) {
 			oldX.pop_back();
 			oldY.pop_back();
 		}
-
-		/*deltaTime = SIMULATION_FIXED_STEP;
-
-		if (x >= 1) {
-			stepCounter = 0;
-		}
-
-		if(vT > 0){
-			stepCounter++;
-		}*/
-
-		/*if (x >= 1) {
-			stepCounter = 0;
-		}
-
-		if (vT > 0) {
-			stepCounter++;
-		}*/
 
 		this->omegaT = (rWheel.getTangencialVel() - lWheel.getTangencialVel()) / this->l;
 		this->phiT += this->omegaT * deltaTime;
@@ -778,24 +781,38 @@ public:
 	}
 
 	void draw(sf::RenderWindow& window) {
-		lWheel.draw(window, sf::Color::Red);
+		this->drawTrail(window, sf::Color::White);
 
 		sf::CircleShape point = sf::CircleShape(1.f);
 		point.setOrigin(sf::Vector2f(point.getRadius(), point.getRadius()));
-		point.setPosition(x * DEFAULT_SCALE, y * DEFAULT_SCALE);
+		point.setPosition(x * DEFAULT_SCALE, -y * DEFAULT_SCALE);
 		point.setFillColor(sf::Color::White);
 		window.draw(point);
 
-		point.setRadius(0.5f);
-		point.setOrigin(sf::Vector2f(point.getRadius(), point.getRadius()));
-		for (int i = 0; i < oldX.size(); i++) {
-			point.setPosition(oldX[i] * DEFAULT_SCALE, oldY[i] * DEFAULT_SCALE);
-			point.setFillColor(sf::Color(255,255,255,0.25f*255));
-			window.draw(point);
-		}
+		lWheel.drawTrail(window, sf::Color::Red);
+		rWheel.drawTrail(window, sf::Color::Green);
 
+		lWheel.draw(window, sf::Color::Red);
 		rWheel.draw(window, sf::Color::Green);
 	}
+
+	void drawTrail(sf::RenderWindow& window, sf::Color color) {
+		sf::CircleShape point = sf::CircleShape(1.f);
+		point.setOrigin(sf::Vector2f(point.getRadius(), point.getRadius()));
+		for (int i = 0; i < oldX.size(); i++) {
+			point.setPosition(oldX[i] * DEFAULT_SCALE, -oldY[i] * DEFAULT_SCALE);
+			point.setFillColor(color);
+			window.draw(point);
+		}
+	}
+
+	void deleteTrail() {
+		oldX.clear();
+		oldY.clear();
+		lWheel.deleteTrail();
+		rWheel.deleteTrail();
+	}
+
 private:
 	double l;
 	double omegaT;
@@ -814,40 +831,205 @@ private:
 	std::deque<double> oldY;
 };
 
+class SimulationData {
+public:
+	SimulationData() {
+		vTleft = std::map<double, double>();
+		vTright = std::map<double, double>();
+
+		rectangleSide = 0;
+
+		r1 = 0;
+		l = 0;
+		r2 = 0;
+	}
+
+	void getInputData() {
+		if (config.getSimMode() == SimulationMode::VECTOR) {
+			setFixedVectorData();
+		}
+		if (config.getSimMode() == SimulationMode::RECTANGLE) {
+			getRectangleData();
+			calculateRectangleData();
+		}
+		if (config.getSimMode() == SimulationMode::CURVE) {
+			getCurveData();
+			calculateCurvaData();
+		}
+		config.setDataStatus(false);
+	}
+
+	void setFixedVectorData() {
+		vTleft.clear();
+		vTright.clear();
+		vTleft = { {0,2},{5,-1},{10,0},{11,2},{16,1} };
+		vTright = { {0,2},{5,1},{10,0},{11,-2},{16,1} };
+		//vTleft = { {0,1},{5,-0.1},{6.57,1},{11.57,-0.1},{13.14,1},  {16.14,1.2},{22.42,0}       ,{23.42,1} };
+		//vTright = {{0,1},{5, 0.1},{6.57,1},{11.57, 0.1},{13.14,1.1},{16.14,1  },{22.42,3.14*0.2},{23.42,1} };
+	}
+	void getVectorData() {
+		vTleft.clear();
+		vTright.clear();
+		int n;
+		std::cout << "\n\n===========================================================\n\n";
+		std::cout << "Enter the amount of speed changes during simulation: ";
+		std::cin >> n;
+
+		double prevTime = 0;
+		double time;
+
+		for (int i = 0; i < n; i++) {
+			do {
+				std::cout << "Time [s] " << i+1 << " : ";
+				std::cin >> time;
+			} while (time < prevTime);
+			prevTime = time;
+			std::cout << "Tangencial speed vT of Left wheel [m/s]: ";
+			std::cin >> vTleft[time];
+			std::cout << "Tangencial speed vT of Right wheel [m/s]: ";
+			std::cin >> vTright[time];
+		}
+	}
+
+	void getRectangleData() {
+		rectangleSide = 0;
+		std::cout << "\n\n===========================================================\n\n";
+		do {
+			std::cout << "Enter size of rectangle side to draw [m]: ";
+			std::cin >> rectangleSide;
+		} while (rectangleSide < 0);
+	}
+	void calculateRectangleData() {
+		vTleft.clear();
+		vTright.clear();
+
+		double sideTime = 1;
+		double turnTime = 1;
+		double omegaT = (-90 * (3.1415 / 180.0)) / (turnTime);
+		double time = 0;
+
+		for (int i = 0; i < 4; i++) {
+			vTleft[time] = this->rectangleSide / (sideTime);
+			vTright[time] = this->rectangleSide / (sideTime);
+
+			time += sideTime;
+
+			vTleft[time] = (DEFAULT_WHEELBASE * omegaT) / 2;
+			vTright[time] = -(DEFAULT_WHEELBASE * omegaT) / 2;
+
+			time += turnTime;
+		}
+		vTleft[time] = 0;
+		vTright[time] = 0;
+	}
+
+	void getCurveData() {
+		r1 = 0; l = 0; r2 = 0;
+		std::cout << "\n\n===========================================================\n\n";
+
+		std::cout << "Enter radius of the first curve [m]: ";
+		std::cin >> r1;
+
+		std::cout << "Enter length betwwn curves [m]: ";
+		std::cin >> l;
+
+		std::cout << "Enter radius of the fsecondirst curve [m]: ";
+		std::cin >> r2;
+	}
+	void calculateCurvaData() {
+		vTleft.clear();
+		vTright.clear();
+
+		double turnTime = 1;
+		double omegaT;
+		double vT;
+		double time = 0;
+
+		omegaT = (-90 * (3.1415 / 180.0)) / (turnTime);
+		vT = ((90 * (3.1415 / 180.0)) * r1) / (turnTime);
+		vTleft[time] =  ((2 * vT) + (DEFAULT_WHEELBASE * omegaT)) / 2;
+		vTright[time] = ((2 * vT) - (DEFAULT_WHEELBASE * omegaT)) / 2;
+
+		time += turnTime;
+
+		vTleft[time] = this->l / (turnTime);
+		vTright[time] = this->l / (turnTime);
+
+		time += turnTime;
+
+		omegaT = (+90 * (3.1415 / 180.0)) / (turnTime);
+		vT = ((90 * (3.1415 / 180.0)) * r1) / (turnTime);
+		vTleft[time] = ((2 * vT) + (DEFAULT_WHEELBASE * omegaT)) / 2;
+		vTright[time] = ((2 * vT) - (DEFAULT_WHEELBASE * omegaT)) / 2;
+	}
+
+	void setVehicleSpeed(double time, Vehicle& vehicle) {
+		std::map<double, double>::iterator it = vTleft.lower_bound(time); // iterator to the first element with key >= key
+		if (it != vTleft.begin()) {
+			--it;
+			vehicle.lWheel.setTangencialVel(it->second);
+		}
+		
+		it = vTright.lower_bound(time); // iterator to the first element with key >= key
+		if (it != vTright.begin()) {
+			--it;
+			vehicle.rWheel.setTangencialVel(it->second);
+		}
+	}
+
+private:
+	AppConfig& config = AppConfig::getInstance();
+	std::map<double, double> vTleft;
+	std::map<double, double> vTright;
+	double rectangleSide;
+	double r1;
+	double l;
+	double r2;
+};
+
 void placeholder_action() {
 	//std::cout << "Button 1 clicked!" << std::endl;
 }
 
 void b_one() {
 	AppConfig& config = AppConfig::getInstance();
-	config.setVectoreSimulation();
-	config.setChangeStatus(true);
+	config.setVectorSimulation();
+	config.setPositionResetStatus(true);
+	config.setTimerResetStatus(true);
+	config.setDataStatus(true);
 }
 void b_second() {
 	AppConfig& config = AppConfig::getInstance();
 	config.setRectangleSimulation();
-	config.setChangeStatus(true);
+	config.setPositionResetStatus(true);
+	config.setTimerResetStatus(true);
+	config.setDataStatus(true);
 }
 void b_third() {
 	AppConfig& config = AppConfig::getInstance();
 	config.setCurveSimulation();
-	config.setChangeStatus(true);
+	config.setPositionResetStatus(true);
+	config.setTimerResetStatus(true);
+	config.setDataStatus(true);
 }
 void b_fourth() {
 	AppConfig& config = AppConfig::getInstance();
 	config.setGameSimulation();
-	config.setChangeStatus(true);
+	config.setPositionResetStatus(true);
+	config.setTimerResetStatus(true);
 }
 
 void b_sim() {
 	AppConfig& config = AppConfig::getInstance();
 	config.setSimulationMode();
-	config.setChangeStatus(true);
+	config.setPositionResetStatus(true);
+	config.setTimerResetStatus(true);
 }
 void b_game() {
 	AppConfig& config = AppConfig::getInstance();
 	config.setGameMode();
-	config.setChangeStatus(true);
+	config.setPositionResetStatus(true);
+	config.setTimerResetStatus(true);
 }
 
 void b_lMode() {
@@ -870,8 +1052,7 @@ void b_timeReset() {
 	config.setTimerResetStatus(true);
 }
 
-int main()
-{
+int main() {
 	AppConfig& config = AppConfig::getInstance();
 
 	sf::RenderWindow window(resolutionPicker(), "Diferential drive simulation", sf::Style::Close);
@@ -890,19 +1071,19 @@ int main()
 
 	UIPanel panel(sf::Vector2f(0.f, window.getSize().y - 160.f), sf::Vector2f(window.getSize().x, 160.f));
 	panel.addButton(sf::Vector2f(oneCol * 0.f, topRow), sf::Vector2f(oneCol * 3.f, oneRow * 1.f), "Simulation mode", font, &b_sim);
-	panel.addButton(sf::Vector2f(oneCol * 0.f, botRow), oneSize, "     1.\nscenario", font, &b_one);
-	panel.addButton(sf::Vector2f(oneCol * 1.f, botRow), oneSize, "     2.\nscenario", font, &b_second);
-	panel.addButton(sf::Vector2f(oneCol * 2.f, botRow), oneSize, "     3.\nscenario", font, &b_third);
+	panel.addButton(sf::Vector2f(oneCol * 0.f, botRow), oneSize, "Vector", font, &b_one);
+	panel.addButton(sf::Vector2f(oneCol * 1.f, botRow), oneSize, "Square", font, &b_second);
+	panel.addButton(sf::Vector2f(oneCol * 2.f, botRow), oneSize, "Curve", font, &b_third);
 
 	panel.addButton(sf::Vector2f(oneCol * 3.f, topRow), oneSize, "Game\nmode", font, &b_game);
-	panel.addButton(sf::Vector2f(oneCol * 3.f, botRow), oneSize, "     4.\nscenario", font, &b_fourth);
+	panel.addButton(sf::Vector2f(oneCol * 3.f, botRow), oneSize, "Manual\ncontrol", font, &b_fourth);
 
 	panel.addButton(sf::Vector2f(oneCol * 4.f, topRow), oneSize, "Light\nmode", font, &b_lMode);
 	panel.addButton(sf::Vector2f(oneCol * 4.f, botRow), oneSize, "Dark\nmode", font, &b_dMode);
 
-	panel.addButton(sf::Vector2f(oneCol * 4.f, topRow), oneSize, "Reset\nposition", font, &b_posReset);
-	panel.addButton(sf::Vector2f(oneCol * 4.f, botRow), oneSize, "Dark\nmode", font, &b_timeReset);
-	
+	panel.addButton(sf::Vector2f((window.getSize().x - (oneCol * 1.f)), topRow), oneSize, "Reset\nposition", font, &b_posReset);
+	panel.addButton(sf::Vector2f((window.getSize().x - (oneCol * 3.f)), topRow), oneSize, "Show\nmenu", font, &b_posReset);
+
 	panel.addIndicator(sf::Vector2f((window.getSize().x - (oneCol * 6.f)), topRow), oneSize, "Q", font, sf::Keyboard::Key::Q, &placeholder_action);
 	panel.addIndicator(sf::Vector2f((window.getSize().x - (oneCol * 5.f)), topRow), oneSize, "R", font, sf::Keyboard::Key::R, &placeholder_action);
 	panel.addIndicator(sf::Vector2f((window.getSize().x - (oneCol * 4.f)), topRow), oneSize, "M", font, sf::Keyboard::Key::M, &placeholder_action);
@@ -915,7 +1096,8 @@ int main()
 
 	// Model logic
 	Vehicle vehicle = Vehicle(DEFAULT_WHEELBASE);
-	simulationView.setCenter(vehicle.getX(), vehicle.getY());
+	simulationView.setCenter(vehicle.getX(), -vehicle.getY());
+	SimulationData data = SimulationData();
 
 	Grid grid = Grid(font);
 	grid.recalculate(sf::Vector2f(0, 0), window.getSize());
@@ -934,13 +1116,14 @@ int main()
 		if (config.getChangeStatus()) {
 			panel.recolor();
 			grid.recolor();
-			grid.recalculate(sf::Vector2f(vehicle.getX(), vehicle.getY()), window.getSize());
+			grid.recalculate(sf::Vector2f(vehicle.getX(), -vehicle.getY()), window.getSize());
 			rulers.recolor();
 			config.setChangeStatus(false);
 		}
 
 		if (config.getPositionResetStatus()) {
 			vehicle.resetPosition();
+			vehicle.deleteTrail();
 			config.setPositionResetStatus(false);
 		}
 
@@ -949,14 +1132,17 @@ int main()
 			abso_timer = calc_timer;
 			draw_timer = calc_timer;
 			stepCounter = 0;
+			vehicle.deleteTrail();
 			config.setTimerResetStatus(false);
+		}
+
+		if (config.getDataStatus()) {
+			data.getInputData();
 		}
 
 		while (window.pollEvent(event))
 		{
-			// Handle events in UIPanel
-			panel.handleEvent(event ,window);
-
+			panel.handleEvent(event ,window); // Handle events in UIPanel
 			// Handle key press event
 			if (event.type == sf::Event::KeyPressed && config.getSimMode() == SimulationMode::GAME) {
 				switch (event.key.code)
@@ -965,23 +1151,26 @@ int main()
 					vehicle.setTangencialVel(vehicle.getTangencialVel() + 0.1);
 					break;
 				case sf::Keyboard::Key::A:
-					vehicle.setAngularVel(vehicle.getAngularVel() - 0.1);
+					vehicle.setAngularVel(vehicle.getAngularVel() + 0.1);
 					break;
 				case sf::Keyboard::Key::S:
 					vehicle.setTangencialVel(vehicle.getTangencialVel() - 0.1);
 					break;
 				case sf::Keyboard::Key::D:
-					vehicle.setAngularVel(vehicle.getAngularVel() + 0.1);
+					vehicle.setAngularVel(vehicle.getAngularVel() - 0.1);
 					break;
 				case sf::Keyboard::Key::Q:
 					vehicle.setTangencialVel(0);
 					break;
-				case sf::Keyboard::Key::E:
+				case sf::Keyboard::Key::R:
 					vehicle.setAngularVel(0);
 					break;
+				case sf::Keyboard::Key::M:
+					// Show menu
+					break;
 				case sf::Keyboard::Key::Space:
-					vehicle.setAngularVel(0);
 					vehicle.setTangencialVel(0);
+					vehicle.setAngularVel(0);
 					break;
 				default:
 					break;
@@ -1008,66 +1197,42 @@ int main()
 			}
 		}
 
+		// ==================================================================================================
+		// Calculating the simulation with fixed or variable time delta depending on the need of precision
+		// ==================================================================================================
+
 		if (config.getAppMode() == ApplicationMode::SIMULATION_MODE) {
+			data.setVehicleSpeed(stepCounter / SIMULATION_SECOND_STEP_AMOUNT, vehicle);
 			vehicle.recalculate(SIMULATION_FIXED_STEP);
-			grid.checkRecalculate(sf::Vector2f(vehicle.getX(), vehicle.getY()), window.getSize());
-			rulers.recalculate(sf::Vector2f(vehicle.getX(), vehicle.getY()), window.getSize(), panel.getSize());
-			//vehicle.printData(calc_duration.count() * TIME_uS, abso_duration.count() * TIME_mS);
+			vehicle.printData(SIMULATION_FIXED_STEP * TIME_uS, stepCounter / SIMULATION_SECOND_STEP_AMOUNT);
+			stepCounter++;
 		}
 		else if (config.getAppMode() == ApplicationMode::GAME_MODE) {
 			auto end_time = std::chrono::high_resolution_clock::now(); // get current time again
-			auto calc_duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - calc_timer); // calculate time difference
 			auto abso_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - abso_timer); // calculate time difference
+			auto calc_duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - calc_timer); // calculate time difference
 
 			// Calculate data
 			if (calc_duration.count() >= 100) { // check if 10micro/s has elapsed
 				vehicle.recalculate(calc_duration.count() * TIME_uS);
-				grid.checkRecalculate(sf::Vector2f(vehicle.getX(), vehicle.getY()), window.getSize());
-				rulers.recalculate(sf::Vector2f(vehicle.getX(), vehicle.getY()), window.getSize(), panel.getSize());
 
 				calc_timer = std::chrono::high_resolution_clock::now(); // reset start time
 				vehicle.printData(calc_duration.count() * TIME_uS, abso_duration.count() * TIME_mS);
 			}
 		}
-		
-		/*if (first) {
-			if (abso_duration.count() * TIME_mS >= 0) {
-				vehicle.lWheel.setTangencialVel(2);
-				vehicle.rWheel.setTangencialVel(2);
-			}
-			if (abso_duration.count() * TIME_mS >= 5) {
-				vehicle.lWheel.setTangencialVel(-1);
-				vehicle.rWheel.setTangencialVel(1);
-			}
-			if (abso_duration.count() * TIME_mS >= 10) {
-				vehicle.lWheel.setTangencialVel(0);
-				vehicle.rWheel.setTangencialVel(0);
-			}
-			if (abso_duration.count() * TIME_mS >= 15) {
-				vehicle.lWheel.setTangencialVel(2);
-				vehicle.rWheel.setTangencialVel(-2);
-			}
-			if (abso_duration.count() * TIME_mS >= 20) {
-				vehicle.lWheel.setTangencialVel(1);
-				vehicle.rWheel.setTangencialVel(1);
-			}
-			if (abso_duration.count() * TIME_mS >= 25) {
-				vehicle.lWheel.setTangencialVel(0);
-				vehicle.rWheel.setTangencialVel(0);
-			}
-		}*/
 
-		// =======================================================================================
+		grid.checkRecalculate(sf::Vector2f(vehicle.getX(), -vehicle.getY()), window.getSize());
+		rulers.recalculate(sf::Vector2f(vehicle.getX(), -vehicle.getY()), window.getSize(), panel.getSize());
+
+		// ==================================================================================================
 		// Drawing of the application
-		// =======================================================================================
+		// ==================================================================================================
 
 		window.clear(config.getColBackground());
 
-		simulationView.setCenter(vehicle.getX() * DEFAULT_SCALE, vehicle.getY() * DEFAULT_SCALE);
+		simulationView.setCenter(vehicle.getX() * DEFAULT_SCALE, -vehicle.getY() * DEFAULT_SCALE);
 		window.setView(simulationView);
-
 		grid.draw(window);
-
 		rulers.draw(window);
 		vehicle.draw(window);
 
@@ -1078,6 +1243,5 @@ int main()
 
 		// =======================================================================================
 	}
-
 	return 0;
 }
