@@ -19,9 +19,4 @@
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
-  <ItemGroup>
-    <Font Include="include\arial.ttf">
-      <Filter>Header Files</Filter>
-    </Font>
-  </ItemGroup>
 </Project>

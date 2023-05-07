@@ -6,6 +6,12 @@
 #include <functional>
 #include <climits>
 #include <deque>
+#include <string>
+#include <sstream>
+#include <iomanip>
+#include <fstream>
+#include <filesystem>
+
 
 #define DEFAULT_WHEEL_RADIUS 0.05f					//0.05[m] -> 0.5[dm] -> 5 [cm] -> 50 [mm]
 #define DEFAULT_WHEELDIST 0.1f						//0.10[m] -> 1.0[dm] -> 10[cm] -> 100[mm]
@@ -82,9 +88,49 @@ public:
 		return this->font;
 	}
 	void loadDefFont() {
-		if (!(this->font.loadFromFile("include/arial.ttf"))) {
-			exit(-1);
+		sf::Font::Info fontInfo = font.getInfo();
+
+		// Common font locations to search for
+		const std::vector<std::filesystem::path> fontLocations = {
+			"/usr/share/fonts/truetype/",
+			"/usr/share/fonts/opentype/",
+			"C:/Windows/Fonts/",
+			"C:/Windows/Fonts/more/",
+			"C:/Windows/Fonts/even/more/"
+			// Add more locations as needed
+		};
+
+		// Common font filenames to look for
+		const std::vector<std::string> fontFilenames = {
+			"arial.ttf",
+			"times.ttf",
+			"verdana.ttf",
+			"consolas.ttf",
+			// Add more filenames as needed
+		};
+
+		// Search for font files in all locations
+		for (const auto& location : fontLocations)
+		{
+			for (const auto& filename : fontFilenames)
+			{
+				std::filesystem::path fontPath = location / filename;
+				if (std::filesystem::exists(fontPath))
+				{
+					if (font.loadFromFile(fontPath.string()))
+					{
+						// Font loaded successfully
+						sf::Font::Info fontInfo = font.getInfo();
+						std::cout << "Loaded font: " << fontInfo.family << std::endl;
+						return;
+					}
+				}
+			}
 		}
+
+		// Failed to load font
+		std::cerr << "Failed to load font" << std::endl;
+		exit(-1);
 	}
 
 	sf::Color getColBackground() {
@@ -453,7 +499,7 @@ private:
 
 class Indicator {
 public:
-	Indicator(sf::Vector2f position, sf::Vector2f size, std::string text, sf::Font& font, sf::Keyboard::Key key, std::function<void()> callback) {
+	Indicator(sf::Vector2f position, sf::Vector2f size, std::string text, sf::Font& font, sf::Keyboard::Key key) {
 		AppConfig& config = AppConfig::getInstance();
 		this->indicatorOutline = config.getColPrimary();
 		this->indicatorBackground = sf::Color::Transparent;
@@ -478,14 +524,12 @@ public:
 
 		this->recolor();
 		keyBind = key;
-		callback_fcn = callback;
 	}
 
 	void handleEvent(sf::Event event, sf::RenderWindow& window) {
-		if (event.type == sf::Event::KeyPressed && event.key.code == keyBind && callback_fcn)
+		if (event.type == sf::Event::KeyPressed && event.key.code == keyBind)
 		{
 			background.setFillColor(this->indicatorHighlight);
-			callback_fcn();
 		} 
 		else if (event.type == sf::Event::KeyReleased && event.key.code == keyBind) 
 		{
@@ -524,11 +568,65 @@ private:
 	sf::Color indicatorHighlight;
 
 	sf::Keyboard::Key keyBind;
-	std::function<void()> callback_fcn;
 };
 
 class Label {
+public:
+	Label(sf::Vector2f position, sf::Vector2f size, sf::String text, sf::Font& font) {
+		background.setSize(sf::Vector2f(size.x - 2 * BUTTON_PADDING, size.y - 2 * BUTTON_PADDING));
+		background.setPosition(sf::Vector2f(position.x + BUTTON_PADDING, position.y + BUTTON_PADDING));
+		background.setFillColor(sf::Color::Transparent);
 
+		label.setFont(font);
+		defString = text;
+		label.setString(defString);
+
+		float xSize = (background.getSize().x - BUTTON_PADDING * 2.0f) / label.getLocalBounds().width;
+		float ySize = (background.getSize().y - BUTTON_PADDING * 2.0f) / label.getLocalBounds().height;
+		// Set the font size to fit within the button rectangle
+		float textSize = std::min(xSize, ySize) * label.getCharacterSize();
+		label.setCharacterSize(static_cast<unsigned int>(textSize));
+		// Center the text within the button rectangle
+		label.setOrigin(label.getLocalBounds().left + label.getLocalBounds().width / 2.0f, label.getLocalBounds().top + label.getLocalBounds().height / 2.0f);
+		label.setPosition(background.getPosition() + background.getSize() / 2.0f);
+
+		this->recolor();
+	}
+
+	void updateLabel(double update) {
+		std::stringstream stream;
+		stream << std::fixed << std::setprecision(3) << update;
+
+		label.setString(defString + stream.str());
+
+		float xSize = (background.getSize().x - BUTTON_PADDING * 2.0f) / label.getLocalBounds().width;
+		float ySize = (background.getSize().y - BUTTON_PADDING * 2.0f) / label.getLocalBounds().height;
+		// Set the font size to fit within the button rectangle
+		float textSize = std::min(xSize, ySize) * label.getCharacterSize();
+		label.setCharacterSize(static_cast<unsigned int>(textSize));
+		// Center the text within the button rectangle
+		label.setOrigin(label.getLocalBounds().left + label.getLocalBounds().width / 2.0f, label.getLocalBounds().top + label.getLocalBounds().height / 2.0f);
+		label.setPosition(background.getPosition() + background.getSize() / 2.0f);
+	}
+
+	void recolor() {
+		AppConfig& config = AppConfig::getInstance();
+		this->labelText = config.getColPrimary();
+
+		label.setFillColor(this->labelText);
+	}
+
+	void draw(sf::RenderWindow& window) {
+		window.draw(background);
+		window.draw(label);
+	}
+
+private:
+	sf::RectangleShape background;
+	sf::Text label;
+	sf::String defString;
+
+	sf::Color labelText;
 };
 
 class UIPanel {
@@ -554,9 +652,22 @@ public:
 		buttons.push_back(button);
 	}
 
-	void addIndicator(sf::Vector2f position, sf::Vector2f size, std::string text, sf::Font& font, sf::Keyboard::Key key, std::function<void()> callback) {
-		Indicator indicator(panel.getPosition() + position, size, text, font, key, callback);
+	void addIndicator(sf::Vector2f position, sf::Vector2f size, std::string text, sf::Font& font, sf::Keyboard::Key key) {
+		Indicator indicator(panel.getPosition() + position, size, text, font, key);
 		indicators.push_back(indicator);
+	}
+
+	void addLabel(sf::Vector2f position, sf::Vector2f size, sf::String text, sf::Font& font) {
+		Label label(panel.getPosition() + position, size, text, font);
+		labels.push_back(label);
+	}
+
+	void updateLabels(std::vector<double> data) {
+		if (labels.size() == data.size())
+			for (int i = 0; i < labels.size(); i++) {
+				labels[i].updateLabel(data[i]);
+
+			}
 	}
 
 	void recolor() {
@@ -574,6 +685,9 @@ public:
 		for (Indicator& indicator : indicators) {
 			indicator.recolor();
 		}
+		for (Label& label : labels) {
+			label.recolor();
+		}
 	}
 
 	void draw(sf::RenderWindow& window) {
@@ -583,6 +697,9 @@ public:
 		}
 		for (Indicator& indicator : indicators) {
 			indicator.draw(window);
+		}
+		for (Label& label : labels) {
+			label.draw(window);
 		}
 	}
 
@@ -599,11 +716,10 @@ private:
 	sf::RectangleShape panel;
 	std::vector<Button> buttons = std::vector<Button>();
 	std::vector<Indicator> indicators = std::vector<Indicator>();
+	std::vector<Label> labels = std::vector<Label>();
 
 	sf::Color panelOutline;
 	sf::Color panelBackground;
-
-	/*std::vector<Label> labels;*/
 };
 
 sf::VideoMode resolutionPicker() {
@@ -646,8 +762,64 @@ sf::VideoMode resolutionPicker() {
 	return modes[selection - 1];
 }
 
+class Trail {
+public:
+	Trail() {
+		oldX = std::deque<double>();
+		oldY = std::deque<double>();
+
+		trailLength = DEFAULT_TRAIL_LEN;
+		trailSpacing = 1;
+		trailCounter = 0;
+	}
+
+	void changeTrailSettings() {
+
+	}
+
+	void addTrailPoint(double x, double y) {
+		if (trailCounter >= trailSpacing) {
+			oldX.push_front(x);
+			oldY.push_front(y);
+			if (oldX.size() > trailLength) {
+				oldX.pop_back();
+				oldY.pop_back();
+			}
+			trailCounter = 0;
+		}
+		else {
+			trailCounter++;
+		}
+	}
+
+	void deleteTrail() {
+		oldX.clear();
+		oldY.clear();
+	}
+
+	void draw(sf::RenderWindow& window, sf::Color color) {
+		sf::CircleShape point = sf::CircleShape(0.5f);
+		point.setOrigin(sf::Vector2f(point.getRadius(), point.getRadius()));
+		for (int i = 0; i < oldX.size(); i++) {
+			point.setPosition(oldX[i] * DEFAULT_SCALE, -oldY[i] * DEFAULT_SCALE);
+			point.setFillColor(color);
+			window.draw(point);
+		}
+	}
+
+private:
+	int trailSpacing;
+	int trailLength;
+	int trailCounter;
+
+	std::deque<double> oldX;
+	std::deque<double> oldY;
+};
+
 class Wheel {
 public:
+	Trail trail;
+
 	Wheel (float wheelRadius, double phi) {
 		r = wheelRadius;
 		omegaR = 0;
@@ -657,8 +829,15 @@ public:
 		x = DEFAULT_WHEELBASE * 0.5f * cos(phiOffset);
 		y = DEFAULT_WHEELBASE * 0.5f * sin(phiOffset);
 
-		oldX = std::deque<double>();
-		oldY = std::deque<double>();
+		trail = Trail();
+	}
+
+	double getX() {
+		return this->x;
+	}
+
+	double getY() {
+		return this->y;
 	}
 
 	double getAngularVel() {
@@ -680,13 +859,8 @@ public:
 	}
 
 	void recalcWheelPos(double xCenter, double yCenter, double phi) {
-		oldX.push_front(x);
-		oldY.push_front(y);
-		if (oldX.size() > DEFAULT_TRAIL_LEN) {
-			oldX.pop_back();
-			oldY.pop_back();
-		}
-
+		trail.addTrailPoint(x, y);
+		
 		x = xCenter + DEFAULT_WHEELBASE * 0.5f * cos(phi + this->phiOffset);
 		y = yCenter + DEFAULT_WHEELBASE * 0.5f * sin(phi + this->phiOffset);
 	}
@@ -699,19 +873,8 @@ public:
 		window.draw(point);
 	}
 
-	void drawTrail(sf::RenderWindow& window, sf::Color color) {
-		sf::CircleShape point = sf::CircleShape(1.f);
-		point.setOrigin(sf::Vector2f(point.getRadius(), point.getRadius()));
-		for (int i = 0; i < oldX.size(); i++) {
-			point.setPosition(oldX[i] * DEFAULT_SCALE, -oldY[i] * DEFAULT_SCALE);
-			point.setFillColor(color);
-			window.draw(point);
-		}
-	}
-
 	void deleteTrail() {
-		oldX.clear();
-		oldY.clear();
+		trail.deleteTrail();
 	}
 
 private:
@@ -724,9 +887,6 @@ private:
 	double y;
 
 	sf::CircleShape point;
-
-	std::deque<double> oldX;
-	std::deque<double> oldY;
 
 	void calcAngularVel() {
 		this->omegaR = this->vR / this->r;
@@ -753,12 +913,7 @@ public:
 		x = 0;
 		y = 0;
 
-		rICR = 0;
-		xR = 0;
-		yR = 0;
-
-		oldX = std::deque<double>();
-		oldY = std::deque<double>();
+		trail = Trail();
 		this->recolor();
 	}
 
@@ -768,6 +923,10 @@ public:
 
 	double getY() {
 		return this->y;
+	}
+
+	double getPhi() {
+		return this->phiT;
 	}
 
 	void resetPosition() {
@@ -801,12 +960,7 @@ public:
 	}
 
 	void recalculate(double deltaTime) {
-		oldX.push_front(x);
-		oldY.push_front(y);
-		if (oldX.size() > DEFAULT_TRAIL_LEN) {
-			oldX.pop_back();
-			oldY.pop_back();
-		}
+		trail.addTrailPoint(x, y);
 
 		this->omegaT = (rWheel.getTangencialVel() - lWheel.getTangencialVel()) / this->l;
 		this->phiT += this->omegaT * deltaTime;
@@ -834,7 +988,7 @@ public:
 	}
 
 	void draw(sf::RenderWindow& window) {
-		this->drawTrail(window, this->color);
+		this->trail.draw(window, this->color);
 
 		sf::CircleShape point = sf::CircleShape(1.f);
 		point.setOrigin(sf::Vector2f(point.getRadius(), point.getRadius()));
@@ -842,26 +996,15 @@ public:
 		point.setFillColor(this->color);
 		window.draw(point);
 
-		lWheel.drawTrail(window, sf::Color::Red);
-		rWheel.drawTrail(window, sf::Color::Green);
+		this->lWheel.trail.draw(window, sf::Color::Red);
+		this->rWheel.trail.draw(window, sf::Color::Green);
 
 		lWheel.draw(window, sf::Color::Red);
 		rWheel.draw(window, sf::Color::Green);
 	}
 
-	void drawTrail(sf::RenderWindow& window, sf::Color color) {
-		sf::CircleShape point = sf::CircleShape(1.f);
-		point.setOrigin(sf::Vector2f(point.getRadius(), point.getRadius()));
-		for (int i = 0; i < oldX.size(); i++) {
-			point.setPosition(oldX[i] * DEFAULT_SCALE, -oldY[i] * DEFAULT_SCALE);
-			point.setFillColor(color);
-			window.draw(point);
-		}
-	}
-
 	void deleteTrail() {
-		oldX.clear();
-		oldY.clear();
+		trail.deleteTrail();
 		lWheel.deleteTrail();
 		rWheel.deleteTrail();
 	}
@@ -877,11 +1020,7 @@ private:
 	double x;
 	double y;
 
-	double rICR;
-	double xR;
-	double yR;
-	std::deque<double> oldX;
-	std::deque<double> oldY;
+	Trail trail;
 
 	sf::Color color;
 };
@@ -1117,9 +1256,88 @@ private:
 	double r2;
 };
 
-void placeholder_action() {
-	//std::cout << "Button 1 clicked!" << std::endl;
-}
+class FileHandler {
+public:
+	FileHandler() {
+		createNewFile();
+	}
+
+	void writeToFile(std::vector<double> data) {
+		if (currentFileStream.is_open()) {
+			for (int i = 0; i < data.size(); i++) {
+				currentFileStream << data[i] << ";";
+			}
+			currentFileStream <<std::endl;
+		}
+		else {
+			std::cout << "Error: File not open for writing" << std::endl;
+		}
+	}
+
+	void writeToFile(std::vector<std::string> data) {
+		if (currentFileStream.is_open()) {
+			for (int i = 0; i < data.size(); i++) {
+				currentFileStream << data[i] << ";";
+			}
+			currentFileStream << std::endl;
+		}
+		else {
+			std::cout << "Error: File not open for writing" << std::endl;
+		}
+	}
+
+	void createNewFile() {
+		currentFileStream.close();
+
+		auto now = std::chrono::system_clock::now(); // Get the current time
+		auto now_c = std::chrono::system_clock::to_time_t(now); // Convert to time_t
+		std::stringstream filename_ss;
+		std::tm timeinfo;
+		localtime_s(&timeinfo, &now_c); // Convert time_t to tm structure
+		filename_ss << std::put_time(&timeinfo, "%Y_%m_%d__%H_%M_%S"); // Format the time
+		std::string filename = filename_ss.str(); // Append file extension
+
+		if (config.getAppMode() == ApplicationMode::GAME_MODE) {
+			filename += "-VAR_DELTA-GAME_MODE";
+		}
+		else {
+			filename += "-FIX_DELTA-SIMULATION";
+		}
+
+		switch (config.getSimMode()) {
+		case SimulationMode::VECTOR:
+			filename += "-VECTOR.csv";
+			break;
+		case SimulationMode::RECTANGLE:
+			filename += "-RECTANGLE.csv";
+			break;
+		case SimulationMode::CURVE:
+			filename += "-CURVE.csv";
+			break;
+		case SimulationMode::GAME:
+			filename += "-GAME.csv";
+			break;
+		default:
+			filename += ".csv";
+			break;
+		}
+
+		// Open the file for writing
+		currentFileStream.open(filename, std::ios::out);
+		if (!currentFileStream.is_open()) {
+			std::cout << "Error: Could not open file for writing" << std::endl;
+		}
+
+		this->writeToFile(std::vector<std::string>{ "t[s]", "step","vT[m/s]","omegaT[rad/s]","xT[m]", "yT[m]", "phiT[rad]",
+													"vL[m/s]", "omegaL[rad/s]", "xL[m]", "yL[m]",
+													"vR[m/s]", "omegaR[rad/s]", "xR[m]", "yR[m]" });
+	}
+
+private:
+	AppConfig& config = AppConfig::getInstance();
+	std::string filename;
+	std::ofstream currentFileStream;
+};
 
 void b_one() {
 	AppConfig& config = AppConfig::getInstance();
@@ -1214,15 +1432,24 @@ int main() {
 	panel.addButton(sf::Vector2f((window.getSize().x - (oneCol * 1.f)), topRow), oneSize, "Reset\nposition", font, ApplicationMode::NONE, &b_posReset);
 	//panel.addButton(sf::Vector2f((window.getSize().x - (oneCol * 3.f)), topRow), oneSize, "Show\nmenu", font, ApplicationMode::NONE, &b_posReset);
 
-	panel.addIndicator(sf::Vector2f((window.getSize().x - (oneCol * 6.f)), topRow), oneSize, "Q", font, sf::Keyboard::Key::Q, &placeholder_action);
-	panel.addIndicator(sf::Vector2f((window.getSize().x - (oneCol * 5.f)), topRow), oneSize, "R", font, sf::Keyboard::Key::R, &placeholder_action);
-	//panel.addIndicator(sf::Vector2f((window.getSize().x - (oneCol * 4.f)), topRow), oneSize, "M", font, sf::Keyboard::Key::M, &placeholder_action);
-	panel.addIndicator(sf::Vector2f((window.getSize().x - (oneCol * 6.f)), botRow), sf::Vector2f(oneCol * 3.f, oneRow * 1.f), "\n\n|________|\n", font, sf::Keyboard::Key::Space, &placeholder_action);
+	panel.addIndicator(sf::Vector2f((window.getSize().x - (oneCol * 5.f)), topRow), oneSize, "Q", font, sf::Keyboard::Key::Q);
+	panel.addIndicator(sf::Vector2f((window.getSize().x - (oneCol * 4.f)), topRow), oneSize, "R", font, sf::Keyboard::Key::R);
+	panel.addIndicator(sf::Vector2f((window.getSize().x - (oneCol * 5.f)), botRow), sf::Vector2f(oneCol * 2.f, oneRow * 1.f), "\n\n|________|\n", font, sf::Keyboard::Key::Space);
 
-	panel.addIndicator(sf::Vector2f((window.getSize().x - (oneCol * 3.f)), botRow), oneSize, "A", font, sf::Keyboard::Key::A, &placeholder_action);
-	panel.addIndicator(sf::Vector2f((window.getSize().x - (oneCol * 2.f)), topRow), oneSize, "W", font, sf::Keyboard::Key::W, &placeholder_action);
-	panel.addIndicator(sf::Vector2f((window.getSize().x - (oneCol * 2.f)), botRow), oneSize, "S", font, sf::Keyboard::Key::S, &placeholder_action);
-	panel.addIndicator(sf::Vector2f((window.getSize().x - (oneCol * 1.f)), botRow), oneSize, "D", font, sf::Keyboard::Key::D, &placeholder_action);
+	panel.addIndicator(sf::Vector2f((window.getSize().x - (oneCol * 3.f)), botRow), oneSize, "A", font, sf::Keyboard::Key::A);
+	panel.addIndicator(sf::Vector2f((window.getSize().x - (oneCol * 2.f)), topRow), oneSize, "W", font, sf::Keyboard::Key::W);
+	panel.addIndicator(sf::Vector2f((window.getSize().x - (oneCol * 2.f)), botRow), oneSize, "S", font, sf::Keyboard::Key::S);
+	panel.addIndicator(sf::Vector2f((window.getSize().x - (oneCol * 1.f)), botRow), oneSize, "D", font, sf::Keyboard::Key::D);
+
+	panel.addLabel(sf::Vector2f(oneCol * 5.f, topRow), sf::Vector2f(oneCol * 3.f, oneRow * 0.5f), "Vehicle - v [m/s]: ", font);
+	std::u32string utf32_string = U"Vehicle - \u03c9 [rad/s]:";
+	panel.addLabel(sf::Vector2f(oneCol * 5.f, botRow * 0.5f), sf::Vector2f(oneCol * 3.f, oneRow * 0.5f), sf::String::fromUtf32(utf32_string.begin(), utf32_string.end()), font);
+	panel.addLabel(sf::Vector2f(oneCol * 5.f, botRow), sf::Vector2f(oneCol * 3.f, oneRow * 0.5f), "R Wheel - v [m/s]: ", font);
+	panel.addLabel(sf::Vector2f(oneCol * 5.f, botRow + botRow * 0.5f), sf::Vector2f(oneCol * 3.f, oneRow * 0.5f), "L Wheel - v [m/s]: ", font);
+	panel.addLabel(sf::Vector2f(oneCol * 8.f, topRow), sf::Vector2f(oneCol * 3.f, oneRow * 0.5f), "Vehicle - x [m]: ", font);
+	panel.addLabel(sf::Vector2f(oneCol * 8.f, botRow * 0.5f), sf::Vector2f(oneCol * 3.f, oneRow * 0.5f), "Vehicle - y [m]: ", font);
+	panel.addLabel(sf::Vector2f(oneCol * 8.f, botRow), sf::Vector2f(oneCol * 3.f, oneRow * 0.5f), "Sim.Time [s]: ", font);
+	panel.addLabel(sf::Vector2f(oneCol * 8.f, botRow + botRow * 0.5f), sf::Vector2f(oneCol * 3.f, oneRow * 0.49f), "Sim.Step [-]: ", font);
 
 	// Model logic
 	Vehicle vehicle = Vehicle(DEFAULT_WHEELBASE);
@@ -1234,11 +1461,18 @@ int main() {
 
 	Ruler rulers = Ruler();
 	rulers.recalculate(sf::Vector2f(0, 0), window.getSize(), panel.getSize());
+	
+	FileHandler logFileHandler = FileHandler();
+	logFileHandler.createNewFile();
 
 	// Count timer
+	auto end_time = std::chrono::high_resolution_clock::now(); // get current time again
 	auto calc_timer = std::chrono::high_resolution_clock::now(); // get current time
 	auto abso_timer = calc_timer;
 	auto draw_timer = calc_timer;
+	auto abso_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - abso_timer); // calculate time difference
+	auto calc_duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - calc_timer); // calculate time difference
+
 	long stepCounter = 0;
 
 	while (window.isOpen())
@@ -1259,11 +1493,14 @@ int main() {
 		}
 
 		if (config.getTimerResetStatus()) {
-			calc_timer = std::chrono::high_resolution_clock::now();
+			end_time = std::chrono::high_resolution_clock::now(); // get current time again
+			calc_timer = std::chrono::high_resolution_clock::now(); // get current time
 			abso_timer = calc_timer;
 			draw_timer = calc_timer;
+			abso_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - abso_timer); // calculate time difference
 			stepCounter = 0;
 			vehicle.deleteTrail();
+			logFileHandler.createNewFile();
 			config.setTimerResetStatus(false);
 		}
 
@@ -1336,25 +1573,49 @@ int main() {
 		if (config.getAppMode() == ApplicationMode::SIMULATION_MODE) {
 			data.setVehicleSpeed(stepCounter / SIMULATION_SECOND_STEP_AMOUNT, vehicle);
 			vehicle.recalculate(SIMULATION_FIXED_STEP);
-			vehicle.printData(SIMULATION_FIXED_STEP * TIME_uS, stepCounter / SIMULATION_SECOND_STEP_AMOUNT);
 			stepCounter++;
 		}
 		else if (config.getAppMode() == ApplicationMode::GAME_MODE) {
-			auto end_time = std::chrono::high_resolution_clock::now(); // get current time again
-			auto abso_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - abso_timer); // calculate time difference
-			auto calc_duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - calc_timer); // calculate time difference
+			end_time = std::chrono::high_resolution_clock::now(); // get current time again
+			abso_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - abso_timer); // calculate time difference
+			calc_duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - calc_timer); // calculate time difference
 
 			// Calculate data
 			if (calc_duration.count() >= 100) { // check if 10micro/s has elapsed
 				vehicle.recalculate(calc_duration.count() * TIME_uS);
-
 				calc_timer = std::chrono::high_resolution_clock::now(); // reset start time
-				vehicle.printData(calc_duration.count() * TIME_uS, abso_duration.count() * TIME_mS);
 			}
 		}
 
 		grid.checkRecalculate(sf::Vector2f(vehicle.getX(), -vehicle.getY()), window.getSize());
 		rulers.recalculate(sf::Vector2f(vehicle.getX(), -vehicle.getY()), window.getSize(), panel.getSize());
+		panel.updateLabels(std::vector<double>{
+			vehicle.getTangencialVel(), 
+			vehicle.getAngularVel(), 
+			vehicle.lWheel.getTangencialVel(), 
+			vehicle.rWheel.getTangencialVel(),
+			vehicle.getX(), 
+			vehicle.getY(), 
+			(config.getAppMode()==ApplicationMode::GAME_MODE)?(abso_duration.count() * TIME_mS):(stepCounter / SIMULATION_SECOND_STEP_AMOUNT), 
+			(double)stepCounter});
+		
+		logFileHandler.writeToFile(std::vector<double>{
+			(config.getAppMode() == ApplicationMode::GAME_MODE) ? (abso_duration.count() * TIME_mS) : (stepCounter / SIMULATION_SECOND_STEP_AMOUNT), /*time*/
+			(double)stepCounter,				/*steps*/
+			vehicle.getTangencialVel(),			/*vehicle vT*/
+			vehicle.getAngularVel(),			/*vehicle omegaT*/
+			vehicle.getX(),						/*vehicle x*/
+			vehicle.getY(),						/*vehicle y*/
+			vehicle.getPhi(),					/*vehicle phi*/
+			vehicle.lWheel.getTangencialVel(),	/*L wheel vT*/
+			vehicle.lWheel.getAngularVel(),		/*L wheel omega*/
+			vehicle.lWheel.getX(),				/*L wheel x*/
+			vehicle.lWheel.getY(),				/*L wheel y*/
+			vehicle.rWheel.getTangencialVel(),	/*R wheel vT*/
+			vehicle.rWheel.getAngularVel(),		/*R wheel omega*/
+			vehicle.rWheel.getX(),				/*R wheel x*/
+			vehicle.rWheel.getY()});			/*R wheel y*/
+														
 
 		// ==================================================================================================
 		// Drawing of the application
