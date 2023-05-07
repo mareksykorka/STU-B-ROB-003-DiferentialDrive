@@ -12,7 +12,6 @@
 #include <fstream>
 #include <filesystem>
 
-
 #define DEFAULT_WHEEL_RADIUS 0.05f					//0.05[m] -> 0.5[dm] -> 5 [cm] -> 50 [mm]
 #define DEFAULT_WHEELDIST 0.1f						//0.10[m] -> 1.0[dm] -> 10[cm] -> 100[mm]
 #define DEFAULT_WHEELBASE (DEFAULT_WHEELDIST * 2)	//0.20[m] -> 2.0[dm] -> 20[cm] -> 200[mm]
@@ -768,13 +767,25 @@ public:
 		oldX = std::deque<double>();
 		oldY = std::deque<double>();
 
-		trailLength = DEFAULT_TRAIL_LEN;
-		trailSpacing = 1;
-		trailCounter = 0;
+		changeTrailSettings();
 	}
 
 	void changeTrailSettings() {
-
+		AppConfig& config = AppConfig::getInstance();
+		if (config.getSimMode() == SimulationMode::GAME) {
+			trailLength = DEFAULT_TRAIL_LEN;
+			trailRadius = 0.75f;
+			trailSpacing = 1;
+			trailCounter = 0;
+			trailFade = true;
+		}
+		else {
+			trailLength = DEFAULT_TRAIL_LEN * 10;
+			trailRadius = 1.f;
+			trailSpacing = 3;
+			trailCounter = 0;
+			trailFade = false;
+		}
 	}
 
 	void addTrailPoint(double x, double y) {
@@ -795,14 +806,25 @@ public:
 	void deleteTrail() {
 		oldX.clear();
 		oldY.clear();
+		changeTrailSettings();
 	}
 
 	void draw(sf::RenderWindow& window, sf::Color color) {
-		sf::CircleShape point = sf::CircleShape(0.5f);
+		sf::CircleShape point = sf::CircleShape(trailRadius);
+		
 		point.setOrigin(sf::Vector2f(point.getRadius(), point.getRadius()));
+		double decrement;
+
+		if (trailFade && oldX.size() > 0) {
+			decrement = color.a  / oldX.size();
+		} else {
+			decrement = 0;
+		}
+
 		for (int i = 0; i < oldX.size(); i++) {
 			point.setPosition(oldX[i] * DEFAULT_SCALE, -oldY[i] * DEFAULT_SCALE);
 			point.setFillColor(color);
+			color.a -= decrement;
 			window.draw(point);
 		}
 	}
@@ -811,6 +833,10 @@ private:
 	int trailSpacing;
 	int trailLength;
 	int trailCounter;
+
+	float trailRadius;
+
+	bool trailFade;
 
 	std::deque<double> oldX;
 	std::deque<double> oldY;
@@ -1259,6 +1285,7 @@ private:
 class FileHandler {
 public:
 	FileHandler() {
+		std::filesystem::create_directory("logData");
 		createNewFile();
 	}
 
@@ -1295,7 +1322,7 @@ public:
 		std::tm timeinfo;
 		localtime_s(&timeinfo, &now_c); // Convert time_t to tm structure
 		filename_ss << std::put_time(&timeinfo, "%Y_%m_%d__%H_%M_%S"); // Format the time
-		std::string filename = filename_ss.str(); // Append file extension
+		std::string filename = "logData/" + filename_ss.str(); // Append file extension
 
 		if (config.getAppMode() == ApplicationMode::GAME_MODE) {
 			filename += "-VAR_DELTA-GAME_MODE";
@@ -1571,7 +1598,9 @@ int main() {
 		// ==================================================================================================
 
 		if (config.getAppMode() == ApplicationMode::SIMULATION_MODE) {
-			data.setVehicleSpeed(stepCounter / SIMULATION_SECOND_STEP_AMOUNT, vehicle);
+			if (config.getSimMode() != SimulationMode::GAME) {
+				data.setVehicleSpeed(stepCounter / SIMULATION_SECOND_STEP_AMOUNT, vehicle);
+			}
 			vehicle.recalculate(SIMULATION_FIXED_STEP);
 			stepCounter++;
 		}
